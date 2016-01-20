@@ -303,6 +303,9 @@ public class MediaPlaybackService extends Service {
                     mPlayer.setVolume(mCurrentVolume);
                     break;
                 case SERVER_DIED:
+                    if (mPlayer == null) {
+                        break;
+                    }
                     if (isPlaying()) {
                         pause(false);
                         if (isAppOnForeground(MediaPlaybackService.this)) {
@@ -1792,7 +1795,8 @@ public class MediaPlaybackService extends Service {
         if (getAudioId() < 0) {
             // streaming
             views.setTextViewText(R.id.trackname, getPath());
-            views.setTextViewText(R.id.artistalbum, null);
+            views.setTextViewText(R.id.artist, null);
+            views.setTextViewText(R.id.album, null);
         } else {
             String artist = getArtistName();
             views.setTextViewText(R.id.trackname, getTrackName());
@@ -1803,10 +1807,8 @@ public class MediaPlaybackService extends Service {
             if (album == null || album.equals(MediaStore.UNKNOWN_STRING)) {
                 album = getString(R.string.unknown_album_name);
             }
-
-            views.setTextViewText(
-                    R.id.artistalbum,
-                    getString(R.string.notification_artist_album, artist, album));
+            views.setTextViewText(R.id.artist, artist);
+            views.setTextViewText(R.id.album, album);
         }
 
         views.setImageViewResource(R.id.pause,
@@ -2072,7 +2074,6 @@ public class MediaPlaybackService extends Service {
                 Log.d(LOGTAG, "No play queue");
                 return;
             }
-
             int pos = getNextPosition(force);
             if (pos < 0) {
                 gotoIdleState();
@@ -2928,9 +2929,15 @@ public class MediaPlaybackService extends Service {
                     @Override
                     public void run() {
                         if (mIsSupposedToBePlaying
-                            && mCurrentMediaPlayer != null) {
+                            && mCurrentMediaPlayer != null
+                            && mIsInitialized) {
                             mCurrentMediaPlayer.setNextMediaPlayer(mp);
+                            if (mNextMediaPlayer != null) {
+                                mNextMediaPlayer.release();
+                            }
                             mNextMediaPlayer = mp;
+                        } else {
+                            mp.release();
                         }
                     }
                 }, 300);
@@ -2964,6 +2971,10 @@ public class MediaPlaybackService extends Service {
          */
         public void release() {
             stop();
+            if (mNextMediaPlayer != null) {
+                mNextMediaPlayer.reset();
+                mNextMediaPlayer.release();
+            }
             mCurrentMediaPlayer.release();
         }
 
@@ -3015,6 +3026,7 @@ public class MediaPlaybackService extends Service {
                     mCurrentMediaPlayer.release();
                     if (mNextMediaPlayer != null) {
                         mNextMediaPlayer.release();
+                        mNextMediaPlayer = null;
                     }
                     // Creating a new MediaPlayer and settings its wakemode does not
                     // require the media service, so it's OK to do this now, while the

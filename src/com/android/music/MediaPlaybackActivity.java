@@ -118,7 +118,7 @@ public class MediaPlaybackActivity extends Activity implements MusicUtils.Defs,
     private Toast mToast;
     private int mTouchSlop;
     private ServiceToken mToken;
-    private boolean mReceiverUnregistered = false;
+    private boolean mReceiverUnregistered = true;
     private static Activity mActivity;
     private MusicPanelLayout mSlidingPanelLayout;
     private ImageButton mMenuOverFlow;
@@ -155,6 +155,7 @@ public class MediaPlaybackActivity extends Activity implements MusicUtils.Defs,
         IntentFilter metaChangeFilter = new IntentFilter();
         metaChangeFilter.addAction(MediaPlaybackService.META_CHANGED);
         metaChangeFilter.addAction(MediaPlaybackService.QUEUE_CHANGED);
+        metaChangeFilter.addAction(MediaPlaybackService.PLAYSTATE_CHANGED);
         registerReceiver(mTrackListListener, metaChangeFilter);
         new MusicUtils.BitmapDownloadThread(this, null, 0, 20).start();
     }
@@ -748,11 +749,12 @@ public class MediaPlaybackActivity extends Activity implements MusicUtils.Defs,
     @Override
     public void onStop() {
         paused = true;
+        unregisterReceiver(mScreenTimeoutListener);
         if (!mReceiverUnregistered) {
             mHandler.removeMessages(REFRESH);
             unregisterReceiver(mStatusListener);
+            mReceiverUnregistered = true;
         }
-        unregisterReceiver(mScreenTimeoutListener);
         MusicUtils.unbindFromService(mToken);
         mService = null;
         super.onStop();
@@ -774,6 +776,7 @@ public class MediaPlaybackActivity extends Activity implements MusicUtils.Defs,
         f.addAction(MediaPlaybackService.SHUFFLE_CHANGED);
         f.addAction(MediaPlaybackService.REPEAT_CHANGED);
         registerReceiver(mStatusListener, f);
+        mReceiverUnregistered = false;
 
         IntentFilter s = new IntentFilter();
         s.addAction(Intent.ACTION_SCREEN_ON);
