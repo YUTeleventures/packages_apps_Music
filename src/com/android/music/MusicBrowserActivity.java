@@ -121,12 +121,19 @@ public class MusicBrowserActivity extends MediaPlaybackActivity implements
         MusicUtils.updateGroupByFolder(this);
         init();
         initView();
-        createFavoritePlaylist();
+        mFavoritePlaylistThread.start();
         String shuf = getIntent().getStringExtra("autoshuffle");
         if ("true".equals(shuf)) {
             mToken = MusicUtils.bindToService(this, autoshuffle);
         }
     }
+
+    private Thread mFavoritePlaylistThread = new Thread() {
+        @Override
+        public void run() {
+            createFavoritePlaylist();
+        }
+    };
 
     private void createFavoritePlaylist() {
         // TODO Auto-generated method stub
@@ -257,7 +264,6 @@ public class MusicBrowserActivity extends MediaPlaybackActivity implements
     public void onResume() {
         // TODO Auto-generated method stub
         super.onResume();
-        updateNowPlaying(this);
     }
 
     public void showScreen(int position) {
@@ -277,6 +283,10 @@ public class MusicBrowserActivity extends MediaPlaybackActivity implements
             }
         }
 
+        int maxTabPosition = mNavigationAdapter.getCount()-1;
+        if(position > maxTabPosition){
+           position = 0;
+        }
         mNavigationAdapter.setClickPosition(position);
         mDrawerListView.invalidateViews();
         FragmentManager fragmentManager = getFragmentManager();

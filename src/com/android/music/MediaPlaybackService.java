@@ -276,8 +276,6 @@ public class MediaPlaybackService extends Service {
 
     private RemoteControlClient mRemoteControlClient;
 
-    private MyFileObserver mFileObserver;
-
     private Handler mMediaplayerHandler = new Handler() {
         float mCurrentVolume = 1.0f;
         @Override
@@ -1489,14 +1487,24 @@ public class MediaPlaybackService extends Service {
 
     private Cursor getCursorForId(long lid) {
         String id = String.valueOf(lid);
-
-        Cursor c = getContentResolver().query(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                mCursorCols, "_id=" + id , null, null);
-        if (c != null && c.getCount() > 0) {
-            c.moveToFirst();
-        } else {
-            c = null;
+        Cursor c = null;
+        try {
+            c = getContentResolver().query(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    mCursorCols, "_id=" + id, null, null);
+            if (c != null && c.getCount() > 0) {
+                c.moveToFirst();
+            } else {
+                if (c != null) {
+                    c.close();
+                    c = null;
+                }
+            }
+        } catch (Exception e) {
+            if (c != null) {
+                c.close();
+                c = null;
+            }
         }
         return c;
     }
@@ -1585,22 +1593,6 @@ public class MediaPlaybackService extends Service {
         }
     }
 
-    private class MyFileObserver extends FileObserver {
-
-        public MyFileObserver(String path , int mask) {
-            super(path, mask);
-        }
-
-        @Override
-        public void onEvent(int event, String path) {
-            Log.d(LOGTAG, "event = "+event);
-            switch (event) {
-            case FileObserver.DELETE_SELF:
-                return;
-            }
-        }
-    }
-
     public String getRealPathFromContentURI(Context context, Uri contentUri) {
           Cursor cursor = null;
           try {
@@ -1685,11 +1677,6 @@ public class MediaPlaybackService extends Service {
             mFileToPlay = path;
             mPlayer.setDataSource(mFileToPlay);
             if (mPlayer.isInitialized()) {
-                String realPath = getRealPathFromContentURI(this, Uri.parse(path));
-                if(realPath != null) {
-                    mFileObserver = new MyFileObserver(realPath, FileObserver.ALL_EVENTS);
-                    mFileObserver.startWatching();
-                }
                 mOpenFailedCounter = 0;
                 return true;
             }
@@ -1860,9 +1847,6 @@ public class MediaPlaybackService extends Service {
      * Stops playback.
      */
     public void stop() {
-        if (mFileObserver != null) {
-            mFileObserver.stopWatching();
-        }
         stop(true);
     }
 
@@ -2867,6 +2851,7 @@ public class MediaPlaybackService extends Service {
         private Handler mHandler;
         private boolean mIsInitialized = false;
         private boolean mIsComplete = false;
+        private boolean mIsNextPrepared = false;
 
         public MultiPlayer() {
             mCurrentMediaPlayer.setWakeMode(MediaPlaybackService.this, PowerManager.PARTIAL_WAKE_LOCK);
@@ -2879,10 +2864,19 @@ public class MediaPlaybackService extends Service {
             }
         }
 
+        private MediaPlayer.OnPreparedListener mNextPreparedListener =
+                new MediaPlayer.OnPreparedListener(){
+            @Override
+            public void onPrepared(MediaPlayer mp){
+                Log.d(LOGTAG, "next MediaPlayer Prepared");
+                mIsNextPrepared = true;
+            }
+        };
+
         private boolean setDataSourceImpl(MediaPlayer player, String path) {
             try {
                 player.reset();
-                player.setOnPreparedListener(null);
+                player.setOnPreparedListener(mNextPreparedListener);
                 if (path.startsWith("content://")) {
                     player.setDataSource(MediaPlaybackService.this, Uri.parse(path));
                 } else {
@@ -2897,6 +2891,8 @@ public class MediaPlaybackService extends Service {
                 return false;
             } catch (IllegalArgumentException ex) {
                 // TODO: notify the user why the file couldn't be opened
+                return false;
+            } catch (IllegalStateException ex) {
                 return false;
             }
             player.setOnCompletionListener(listener);
@@ -2930,7 +2926,8 @@ public class MediaPlaybackService extends Service {
                     public void run() {
                         if (mIsSupposedToBePlaying
                             && mCurrentMediaPlayer != null
-                            && mIsInitialized) {
+                            && mIsInitialized && mIsNextPrepared
+                            && mCurrentMediaPlayer.isPlaying()) {
                             mCurrentMediaPlayer.setNextMediaPlayer(mp);
                             if (mNextMediaPlayer != null) {
                                 mNextMediaPlayer.release();
@@ -2939,11 +2936,15 @@ public class MediaPlaybackService extends Service {
                         } else {
                             mp.release();
                         }
+                        mIsNextPrepared = false;
                     }
                 }, 300);
             } else {
                 // failed to open next, we'll transition the old fashioned way,
                 // which will skip over the faulty file
+                if (mp != null) {
+                    mp.release();
+                }
                 if (mNextMediaPlayer != null) {
                     mNextMediaPlayer.release();
                     mNextMediaPlayer = null;

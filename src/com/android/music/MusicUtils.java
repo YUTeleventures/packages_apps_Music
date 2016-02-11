@@ -475,6 +475,9 @@ public class MusicUtils {
     }
 
     public static long [] getSongListForPlaylist(Context context, long plid) {
+        if (plid == -1) {
+            return sEmptyList;
+        }
         final String[] ccols = new String[] { MediaStore.Audio.Playlists.Members.AUDIO_ID };
         Cursor cursor = query(context, MediaStore.Audio.Playlists.Members.getContentUri("external", plid),
                 ccols, null, null, MediaStore.Audio.Playlists.Members.DEFAULT_SORT_ORDER);
@@ -720,6 +723,8 @@ public class MusicUtils {
             // this shouldn't happen (the menuitems shouldn't be visible
             // unless the selected item represents something playable
             Log.e("MusicBase", "ListSelection null");
+        } else if (playlistid == -1) {
+            Log.e(TAG,"addToPlaylist failed playlistid="+playlistid);
         } else {
             int size = ids.length;
             ContentResolver resolver = context.getContentResolver();
@@ -890,7 +895,9 @@ public class MusicUtils {
             v.setVisibility(View.GONE);
         }
         TextView tv = (TextView) a.findViewById(R.id.sd_message);
-        tv.setText(message);
+        if (tv != null) {
+            tv.setText(message);
+        }
     }
 
     public static void hideDatabaseError(Activity a) {
@@ -1204,6 +1211,10 @@ public class MusicUtils {
      */
     public static Bitmap getArtwork(Context context, long song_id,
             long album_id, boolean allowdefault) {
+        if (context == null) {
+            Log.d(TAG, "getArtwork failed because context is null");
+            return null;
+        }
 
         if (album_id < 0) {
             // This is something that is not in the database, so get the album
@@ -1268,18 +1279,18 @@ public class MusicUtils {
         if (albumid < 0 && songid < 0) {
             throw new IllegalArgumentException("Must specify an album or a song id");
         }
-
+        ParcelFileDescriptor pfd = null;
         try {
             if (albumid < 0) {
                 Uri uri = Uri.parse("content://media/external/audio/media/" + songid + "/albumart");
-                ParcelFileDescriptor pfd = context.getContentResolver().openFileDescriptor(uri, "r");
+                pfd = context.getContentResolver().openFileDescriptor(uri, "r");
                 if (pfd != null) {
                     FileDescriptor fd = pfd.getFileDescriptor();
                     bm = BitmapFactory.decodeFileDescriptor(fd);
                 }
             } else {
                 Uri uri = ContentUris.withAppendedId(sArtworkUri, albumid);
-                ParcelFileDescriptor pfd = context.getContentResolver().openFileDescriptor(uri, "r");
+                pfd = context.getContentResolver().openFileDescriptor(uri, "r");
                 if (pfd != null) {
                     FileDescriptor fd = pfd.getFileDescriptor();
                     bm = BitmapFactory.decodeFileDescriptor(fd);
@@ -1287,6 +1298,13 @@ public class MusicUtils {
             }
         } catch (IllegalStateException ex) {
         } catch (FileNotFoundException ex) {
+        } finally {
+            try {
+                if (pfd != null) {
+                    pfd.close();
+                }
+            } catch (IOException e) {
+            }
         }
         if (bm != null) {
             mCachedBit = bm;
@@ -1564,6 +1582,9 @@ public class MusicUtils {
     }
 
     public static void updateNowPlaying(Activity a, boolean isExpanded) {
+        if (sService == null) {
+            return;
+        }
         View nowPlayingView = ((MediaPlaybackActivity) a).getNowPlayingView();
         if (nowPlayingView == null) {
             Log.e(TAG, "Draglayout null");
@@ -1665,7 +1686,7 @@ public class MusicUtils {
         ContentResolver res = context.getContentResolver();
         Cursor c = res.query(Uri.parse("content://media/external/fs_id"), null, null, null, null);
         int id = -1;
-        if (c != null) {
+        if (c != null && c.getCount() > 0) {
             c.moveToFirst();
             id = c.getInt(0);
             c.close();
@@ -1798,7 +1819,7 @@ public class MusicUtils {
         BitmapDrawable defaultArtwork = (BitmapDrawable) context.getResources()
                 .getDrawable(R.drawable.unknown_artists);
 
-        if (cursor.moveToPosition(from)) {
+        if (cursor != null && cursor.moveToPosition(from)) {
 
             do {
 
